@@ -1,0 +1,222 @@
+---
+title: "Week3 Project"
+date: "05/21/2022"
+output: html_document
+---
+## Introduction
+
+In this project, we aim at exploring New York City shooting incidents data from 2006 to 2020 so that we can answer the questions below:
+
+1. Overall trend of shooting incidents in NYC since 2006.
+2. Map of shooting incidents by locations.
+3. Trend of shooting incidents in NYC by location.
+4. Gender distribution of perpetrators and victims.
+5. Linear model to show the relation between household income and shooting incidents numbers.
+
+
+```{r packages in need, message=FALSE, warning=FALSE}
+library(dplyr)
+library(lubridate)
+library(date)
+library(ggplot2)
+library(readr)
+library(tidyr)
+```
+
+## Import data
+
+Below is a brief overview of the data structure.
+
+```{r import data, message=FALSE, warning=FALSE}
+library(tidyverse)
+data <- read_csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+```{r show data}
+knitr::kable(head(data[1:8]))
+```
+
+## Total number of shooting incidents in NYC per year (from 2006 to 2020)
+
+```{r reported shootings trend}
+data %>%
+  select(c(1,2)) %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(occur_year = format(as.Date(.$OCCUR_DATE),format="%Y"))%>%
+  group_by(occur_year)%>%
+  summarise(n=n()) %>%
+  ggplot(aes(x= occur_year,y=n))+
+  geom_line(group=1)+
+  geom_point()+
+  theme(plot.title = element_text(hjust = 0.5))+
+  ggtitle("NYC Shooting Incidents Numbers (2006-2020)") +
+  labs(y="Reported shootings", x="Year")
+```
+
+Overall trend of shootings in NYC was decreasing, but it increased sharply in 2020.
+
+## Map of shooting incidents
+
+```{r map}
+ggplot(data, aes(x=Longitude, y=Latitude, col=BORO, alpha=0.1))+geom_point(alpha=0.5)+
+  scale_color_brewer(palette = "Spectral") +
+  ggtitle("Map of shooting incidents") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+## Number of shooting incidents by location over years (from 2016 to 2020)
+
+```{r location, message=FALSE}
+data %>%
+  select(c(1,2,4,10,17,18)) %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(occur_year = format(as.Date(.$OCCUR_DATE),format="%Y")) %>%
+  group_by(occur_year,BORO) %>%  
+  summarise(n=n()) %>%
+  ggplot( aes(x=occur_year, y=n, group=BORO))+geom_point(aes(color=BORO))+geom_line(aes(color=BORO)) +
+  labs(x= "Year", y= "Number of shooting incidents")+
+  ggtitle("Shooting incidents by Location") +
+  theme(plot.title = element_text(hjust = 0.5))
+```
+
+The trends of shooting incidents by boroughs are shown as above. The Brooklyn borough could face the highest risk of shootings.
+
+## The gender of perpetrators
+
+```{r The gender of perpetrators, message=FALSE}
+
+d_gender <-data %>%
+  select(c(1,2,10)) %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(occur_year = format(as.Date(.$OCCUR_DATE),format="%Y")) 
+d_gender$PERP_SEX[is.na(d_gender$PERP_SEX)] <- "unkown"
+d_gender$PERP_SEX[d_gender$PERP_SEX =="U"] <- "unkown"
+d_gender %>%
+  group_by(occur_year,PERP_SEX) %>%
+  summarise(n=n()) %>%
+  mutate(ratio = scales::percent(n/sum(n)))%>%
+  ggplot(aes(x=occur_year,y=n,fill = PERP_SEX)) +
+  scale_fill_manual(values=c("orange", "#99CCFF", "gray82")) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=ratio),
+            position=position_stack(vjust=0.5),size = 2.5) +
+  ggtitle("Perpetrators' gender of Shooting Incidents in NYC") +
+  labs(y="Number of Shooting Incidents", x="Year")+
+  ggtitle("Perpetrators'gender") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(y="Number of cases", x="Year")
+
+```
+
+In some cases, the perpetrators' gender can not be identified, shown as unknown. This graph suggests that male perpetrators are dominant in most cases overall.
+
+## The gender of victims
+
+```{r gender of victims,message=FALSE}
+
+dv_gender <-data %>%
+  select(c(1,2,13)) %>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(occur_year = format(as.Date(.$OCCUR_DATE),format="%Y")) 
+dv_gender$VIC_SEX[dv_gender$VIC_SEX =="U"] <- "unknown"
+dv_gender %>%
+  filter(VIC_SEX != "unknown") %>%
+  group_by(occur_year,VIC_SEX) %>%
+  summarise(n=n()) %>%
+  mutate(ratio = scales::percent(n/sum(n))) %>%
+  ggplot(aes(x=occur_year,y=n,fill = VIC_SEX)) +
+  scale_fill_manual(values=c("orange", "#99CCFF")) +
+  geom_bar(stat="identity") +
+  geom_text(aes(label=ratio),
+            position=position_stack(vjust=0.5),size = 2.5) +
+  ggtitle("Victims' gender of Shooting Incidents in NYC") +
+  labs(y="Number of Shooting Incidents", x="Year")+
+  ggtitle("Victims'gender") +
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(y="Number of cases", x="Year")
+```
+
+This plot shows that shooting victims were more likely to be male.
+
+
+## Simple prediction based on linear model
+
+We use a linear model to estimate relationship between total number of shootings in NYC and the median household income by each borough (from 2006 to 2019). The black dotted line in the graph is predicted value.
+
+```{r linear model, message=FALSE}
+#income:tidy data contains median household income by borough over years (from2006-2019)
+NYC_median_income <- read_csv("https://raw.githubusercontent.com/shinnaL/NYPD-Shooting-Incident-Data-Report/main/NYC_median_income.csv")
+income <- NYC_median_income[1:5,]
+income <-pivot_longer(income,cols = seq(2,15),names_to = "year",values_to = "income")
+income <-income %>%
+  mutate(BOROUGHS= tolower(.$BOROUGHS))
+
+#case_num:tidy data contains total number of shootings by boroughs over years
+
+cases_num <- data %>%
+  select(c(1,2,4)) %>%
+  mutate(BORO = tolower(.$BORO))%>%
+  mutate(OCCUR_DATE = mdy(OCCUR_DATE)) %>%
+  mutate(occur_year = format(as.Date(.$OCCUR_DATE),format="%Y")) %>%
+  filter(occur_year != 2020)%>%
+  group_by(occur_year,BORO) %>%
+  summarise(n=n())
+
+#model_data: left join cases_num and income by year
+model_data <- left_join(cases_num,income,by=c("occur_year"="year","BORO"="BOROUGHS"))
+
+#get the linear model
+mod <- lm(n~income,data = model_data)
+
+#add prediction
+test_data <- data.frame(income=seq(min(model_data$income, na.rm = T), 
+                                   max(model_data$income, na.rm = T),
+                                   length.out=70))
+pred <- predict(mod, newdata = test_data)
+#plot
+model_data %>% ggplot()+
+  geom_point(aes(x=income,y= n,color = BORO))+
+  geom_point(aes(x=test_data$income,y= pred), size=0.5, color = "black")+
+  labs(x="Median household income",y="Number of shooting incidents")
+```
+
+Below is a summary of the linear model. 
+
+**Adjusted R-squared = 0.5532**, **p-value = 9.867e-14**.
+
+```{r present linear model}
+summary(mod)
+```
+
+In general, the number of shooting incidents is negatively correlated with the median household income. The linear model estimation fits well with  median household income and the number of shootings. In addition, the median household income is quite different among boroughs.
+
+## Possible bias
+
+Data is not complete. Missing information could be one of the bias. The missing information could lead to incorrect conclusion. For example, in a large portion of cases perpetrators' gender  can not be identified, which  makes it difficult to make a conclusion whether perpetrators are more likely to be male. 
+
+
+## Conclusion
+
+In summary, the following topics were discussed:
+
+1. The trend of shootings in NYC was decreasing, but it increased sharply in 2020.
+
+2. The location of shootings was visualized in a map.
+
+3. The number of shootings by boroughs was plotted separately.
+
+4. Both perpetrators and victims were more likely to be male.
+
+5. Total number of shootings was inversely correlated with the median household incomes.
+
+
+### Data Source:
+
+1.NYPD Shooting Incident Data (Historic)
+https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic
+
+2.Median household income data source: 
+https://data.cccnewyork.org/data/map/32/households-and-families#32/a/3/56/62/a/a
+
+```{r}
+sessionInfo()
+```
